@@ -1,104 +1,189 @@
 from pathlib import Path
 import pandas as pd
+import tkinter as tk
+from tkinter import filedialog
 import re
-import json
 
-#in order to work the code needs a CSV files containing all the articles you've used
+"""
+HOW TO RUN THIS PROGRAM
 
-class BibliographyOrganizer:
+1. Make sure Python (version 3.10 or newer) is installed.
 
-    def __init__(self, csv_file):
-        self.csv_file = Path(csv_file) #change to you path
-        self.df = pd.read_csv(csv_file)
+2. Install the required package:
 
-        self.standardize_columns()
-        self.clean_data()
-        self.remove_duplicates()
+    pip install pandas
+
+3. Save this script as:
+
+    bibliography_csv_organizer.py
+
+4. Run the script:
+
+    python bibliography_csv_organizer.py
+
+5. A file selection window will appear.
+
+6. Select one or more CSV files.
+
+7. The program will automatically:
+    - Merge all CSV files
+    - Standardize column names
+    - Clean the data
+    - Remove duplicates
+    - Sort the bibliography
+    - Create an output folder
+
+8. Generated files:
+
+    output/organized_bibliography.csv
+    output/references.bib
+
+IMPORTANT
+
+The CSV files should preferably contain columns such as:
+
+title, authors, year, journal, doi, url
+
+The program will also recognize common variations such as:
+
+Title -> title
+Authors -> authors
+DOI -> doi
+Journal -> journal
+"""
+
+
+
+class CSVBibliographyOrganizer:
+
+    def __init__(self):
+
+        self.df = pd.DataFrame()
+
+    def select_files(self):
+
+        root = tk.Tk()
+
+        root.withdraw()
+
+        files = filedialog.askopenfilenames(
+            title="Select CSV files",
+            filetypes=[("CSV files", "*.csv")]
+        )
+
+        return list(files)
+
+    def load_files(self, files):
+
+        dataframes = []
+
+        for file in files:
+
+            try:
+
+                df = pd.read_csv(file)
+
+                dataframes.append(df)
+
+            except Exception as e:
+
+                print(f"Error reading {file}: {e}")
+
+        if dataframes:
+
+            self.df = pd.concat(
+                dataframes,
+                ignore_index=True
+            )
 
     def standardize_columns(self):
 
         rename_map = {
-            "Authors": "authors",
-            "Author": "authors",
+
             "Title": "title",
+            "TITLE": "title",
+
+            "Author": "authors",
+            "Authors": "authors",
+            "AUTHOR": "authors",
+
             "Year": "year",
+
             "Journal": "journal",
+
             "DOI": "doi",
+
             "URL": "url"
         }
 
-        self.df.rename(columns=rename_map, inplace=True)
+        self.df.rename(
+            columns=rename_map,
+            inplace=True
+        )
 
     def clean_data(self):
 
-        required = ["title"]
+        if "title" not in self.df.columns:
 
-        for col in required:
-            if col not in self.df.columns:
-                raise ValueError(f"Missing required column: {col}")
+            raise ValueError(
+                "The CSV must contain a title column."
+            )
 
         self.df["title"] = (
             self.df["title"]
             .fillna("")
+            .astype(str)
             .str.strip()
         )
 
-        if "journal" in self.df.columns:
-            self.df["journal"] = (
-                self.df["journal"]
-                .fillna("")
-                .str.strip()
-            )
+        optional_columns = [
+
+            "authors",
+            "journal",
+            "doi",
+            "url"
+        ]
+
+        for col in optional_columns:
+
+            if col in self.df.columns:
+
+                self.df[col] = (
+
+                    self.df[col]
+
+                    .fillna("")
+
+                    .astype(str)
+
+                    .str.strip()
+                )
 
         if "doi" in self.df.columns:
+
             self.df["doi"] = (
+
                 self.df["doi"]
-                .fillna("")
+
                 .str.lower()
-                .str.strip()
             )
-
-        if "authors" in self.df.columns:
-            self.df["authors"] = (
-                self.df["authors"]
-                .fillna("")
-                .apply(self.normalize_authors)
-            )
-
-    def normalize_authors(self, author_string):
-
-        if not author_string:
-            return ""
-
-        authors = re.split(r";|,", author_string)
-
-        clean = []
-
-        for author in authors:
-            author = author.strip()
-
-            if author:
-                clean.append(author)
-
-        return " and ".join(clean)
 
     def remove_duplicates(self):
 
         if "doi" in self.df.columns:
 
-            doi_entries = self.df["doi"] != ""
+            has_doi = self.df["doi"] != ""
 
-            doi_df = self.df[doi_entries]
-            no_doi_df = self.df[~doi_entries]
+            doi_df = self.df[has_doi]
+
+            no_doi_df = self.df[~has_doi]
 
             doi_df = doi_df.drop_duplicates(
-                subset="doi",
-                keep="first"
+                subset="doi"
             )
 
             no_doi_df = no_doi_df.drop_duplicates(
-                subset="title",
-                keep="first"
+                subset="title"
             )
 
             self.df = pd.concat(
@@ -114,141 +199,138 @@ class BibliographyOrganizer:
 
     def sort_bibliography(self):
 
-        sort_columns = []
-
         if "year" in self.df.columns:
-            sort_columns.append("year")
-
-        if "authors" in self.df.columns:
-            sort_columns.append("authors")
-
-        if sort_columns:
 
             self.df = self.df.sort_values(
-                by=sort_columns,
-                ascending=[False] * len(sort_columns)
+                by="year",
+                ascending=False
             )
 
-    def generate_bibtex_key(self, row):
+    def create_output_folder(self):
 
-        author = "unknown"
+        output = Path("output")
 
-        if row.get("authors", ""):
-            author = row["authors"].split(" and ")[0]
-
-            author = author.split()[-1]
-
-        year = str(row.get("year", "xxxx"))
-
-        title = row.get("title", "")
-
-        first_word = (
-            title.split()[0]
-            .lower()
-            .replace(":", "")
-            if title
-            else "paper"
+        output.mkdir(
+            exist_ok=True
         )
 
-        return f"{author}{year}{first_word}"
+        return output
 
-    def export_bibtex(self, output="references.bib"):
+    def save_csv(self, output):
+
+        filename = (
+            output /
+            "organized_bibliography.csv"
+        )
+
+        self.df.to_csv(
+            filename,
+            index=False
+        )
+
+    def export_bibtex(self, output):
+
+        filename = output / "references.bib"
 
         entries = []
 
         for _, row in self.df.iterrows():
 
-            key = self.generate_bibtex_key(row)
+            author = "unknown"
 
-            entry = [
-                f"@article{{{key},"
-            ]
+            if "authors" in row:
 
-            for field in [
-                "title",
-                "authors",
-                "journal",
-                "year",
-                "doi",
-                "url"
-            ]:
+                value = str(
+                    row["authors"]
+                )
 
-                if field in row and pd.notna(row[field]):
+                if value:
 
-                    value = str(row[field])
+                    author = value.split()[0]
 
-                    if value:
+            year = str(
+                row.get(
+                    "year",
+                    "xxxx"
+                )
+            )
 
-                        name = (
-                            "author"
-                            if field == "authors"
-                            else field
-                        )
+            title = str(
+                row.get(
+                    "title",
+                    ""
+                )
+            )
 
-                        entry.append(
-                            f"  {name} = {{{value}}},"
-                        )
+            first_word = (
 
-            entry.append("}")
+                title.split()[0]
 
-            entries.append("\n".join(entry))
+                if title
 
-        Path(output).write_text(
+                else "paper"
+            )
+
+            key = (
+                f"{author}{year}{first_word}"
+            )
+
+            key = re.sub(
+                r"[^a-zA-Z0-9]",
+                "",
+                key
+            )
+
+            bib = f"""@article{{{key},
+  author = {{{row.get('authors','')}}},
+  title = {{{row.get('title','')}}},
+  journal = {{{row.get('journal','')}}},
+  year = {{{row.get('year','')}}},
+  doi = {{{row.get('doi','')}}},
+  url = {{{row.get('url','')}}}
+}}"""
+
+            entries.append(bib)
+
+        filename.write_text(
             "\n\n".join(entries),
             encoding="utf-8"
         )
 
-    def export_csl_json(
-        self,
-        output="references.json"
-    ):
 
-        records = []
+def main():
 
-        for _, row in self.df.iterrows():
+    organizer = CSVBibliographyOrganizer()
 
-            paper = {
-                "title": row.get("title", ""),
-                "container-title": row.get("journal", ""),
-                "issued": row.get("year", ""),
-                "DOI": row.get("doi", ""),
-                "URL": row.get("url", "")
-            }
+    files = organizer.select_files()
 
-            records.append(paper)
+    if not files:
 
-        with open(output, "w", encoding="utf-8") as f:
+        print("No files selected.")
 
-            json.dump(
-                records,
-                f,
-                indent=2,
-                ensure_ascii=False
-            )
+        return
 
-    def save_clean_csv(
-        self,
-        output="organized_bibliography.csv"
-    ):
+    organizer.load_files(files)
 
-        self.df.to_csv(
-            output,
-            index=False
-        )
+    organizer.standardize_columns()
+
+    organizer.clean_data()
+
+    organizer.remove_duplicates()
+
+    organizer.sort_bibliography()
+
+    output = organizer.create_output_folder()
+
+    organizer.save_csv(output)
+
+    organizer.export_bibtex(output)
+
+    print(
+        f"Bibliography saved in {output.resolve()}"
+    )
 
 
 if __name__ == "__main__":
 
-    organizer = BibliographyOrganizer(
-        "articles.csv"
-    )
-
-    organizer.sort_bibliography()
-
-    organizer.save_clean_csv()
-
-    organizer.export_bibtex()
-
-    organizer.export_csl_json()
-
-    print("Bibliography organized.")
+    main()
